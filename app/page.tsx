@@ -316,6 +316,24 @@ function HorizontalPostRow({
   currentUserId?: string
 }) {
   const [likedByMe, setLikedByMe] = useState(new Set<string>())
+  const rowRef = useRef<HTMLElement>(null)
+
+  // posts がロードされたら post-card を監視してフェードイン
+  useEffect(() => {
+    if (!posts.length || !rowRef.current) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return
+          ;(entry.target as HTMLElement).classList.add('visible')
+          observer.unobserve(entry.target)
+        })
+      },
+      { threshold: 0.05 }
+    )
+    rowRef.current.querySelectorAll('.post-card').forEach(el => observer.observe(el))
+    return () => observer.disconnect()
+  }, [posts])
 
   const handleLike = async (postId: string) => {
     if (!currentUserId) { window.location.href = '/login?next=/'; return }
@@ -331,7 +349,7 @@ function HorizontalPostRow({
   if (posts.length === 0) return null
 
   return (
-    <section className="pb-16">
+    <section className="pb-16" ref={rowRef}>
       <div className="max-w-[1160px] mx-auto">
         {/* セクションヘッダー */}
         <div className="px-6 md:px-12 mb-5 flex items-end justify-between">
@@ -401,6 +419,29 @@ function FeedSection({ currentUserId }: { currentUserId?: string }) {
   // いいね: { postId → count } と 自分のいいね済みセット
   const [likeCountMap, setLikeCountMap] = useState<Record<string, number>>({})
   const [likedByMe,    setLikedByMe]    = useState<Set<string>>(new Set())
+  const sectionRef = useRef<HTMLDivElement>(null)
+
+  // 投稿ロード後に post-card を IntersectionObserver で監視してフェードイン
+  // ← ここがポイント: マウント時の querySelectorAll では非同期ロードのカードを拾えないので
+  //   loading が false になったタイミングで再登録する
+  useEffect(() => {
+    if (loading || !sectionRef.current) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return
+          const el = entry.target as HTMLElement
+          const siblings = [...(el.parentElement?.children ?? [])]
+          el.style.transitionDelay = `${siblings.indexOf(el) * 0.06}s`
+          el.classList.add('visible')
+          observer.unobserve(el)
+        })
+      },
+      { threshold: 0.05 }
+    )
+    sectionRef.current.querySelectorAll('.post-card').forEach(el => observer.observe(el))
+    return () => observer.disconnect()
+  }, [loading, filter])
 
   useEffect(() => {
     setLoading(true)
@@ -474,7 +515,7 @@ function FeedSection({ currentUserId }: { currentUserId?: string }) {
   ]
 
   return (
-    <section className="pb-10">
+    <section className="pb-10" ref={sectionRef}>
       <div className="max-w-[1160px] mx-auto px-6 md:px-12">
         {/* コントロールバー: タイトル + フィルター + 表示切り替え */}
         <div className="fade-up flex items-center gap-2 mb-4 flex-wrap">
