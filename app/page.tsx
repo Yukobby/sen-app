@@ -127,7 +127,7 @@ function Hero({ bgPosts }: { bgPosts?: Post[] }) {
                     opacity: isEdge ? 0.55 : 0.35,
                   }}
                 >
-                  {post?.image_url && (
+                  {post?.image_url && !post.image_url.includes('mangadex') && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={post.image_url}
@@ -574,8 +574,8 @@ function FeedSection({ currentUserId }: { currentUserId?: string }) {
 // 右: 実際の投稿カードスタック（静的） + アクションボタン
 // → スワイプしたい人を /swipe へ誘導
 function DiscoverSection({ posts, stats }: { posts: Post[]; stats: StatsData }) {
-  // 画像ありを優先して最大3枚取得
-  const cardPosts = posts.filter(p => p.image_url).slice(0, 3)
+  // MAL画像（mangadex以外）を優先して最大3枚取得
+  const cardPosts = posts.filter(p => p.image_url && !p.image_url.includes('mangadex')).slice(0, 3)
   const frontPost = cardPosts[0]
 
   const hints = [
