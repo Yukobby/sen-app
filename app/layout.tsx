@@ -4,6 +4,7 @@
 import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
+import FeedbackButton from '@/components/FeedbackButton'
 
 // variable font なので weight 配列で全ウェイトを一括読み込み
 const jakartaSans = Plus_Jakarta_Sans({
@@ -33,6 +34,7 @@ export default function RootLayout({
         <div className="relative z-10 flex flex-col flex-1">
           {children}
         </div>
+        <FeedbackButton />
       </body>
     </html>
   )

@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { supabase, Post } from '@/lib/supabase'
 import Link from 'next/link'
 import SwipeDeck from '@/components/SwipeDeck'
+import TutorialModal from '@/components/TutorialModal'
 
 // デッキ定義
 const DECKS = [
@@ -38,6 +39,7 @@ function SwipePageContent() {
 
   return (
     <div className="min-h-screen bg-bg text-text flex flex-col">
+      <TutorialModal />
       {/* ヘッダー */}
       <header className="border-b border-border px-6 py-4 bg-bg/75 backdrop-blur-xl sticky top-0 z-10">
         <div className="max-w-5xl mx-auto flex items-center gap-4">
