@@ -1,12 +1,11 @@
 /**
- * 既存投稿にあらすじを自動補完するスクリプト
+ * 既存投稿にあらすじ＋表紙画像を自動補完するスクリプト
  * 通常実行:     npx tsx scripts/seed-descriptions.ts
  * 強制上書き:   npx tsx scripts/seed-descriptions.ts --force
+ * 画像のみ:     npx tsx scripts/seed-descriptions.ts --images-only
  *
- * --force: 既存の description（英語テキストなど）も上書きして日本語に更新する
- *
- * - manga → MangaDex API (ja 優先)
- * - anime → Jikan API の synopsis
+ * - manga → MangaDex API (あらすじ: ja 優先, 表紙: uploads.mangadex.org)
+ * - anime → Jikan API   (あらすじ: synopsis, 表紙: images.jpg.large_image_url)
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -20,102 +19,131 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// --force フラグで全件上書き
-const FORCE = process.argv.includes('--force')
+const FORCE       = process.argv.includes('--force')
+const IMAGES_ONLY = process.argv.includes('--images-only')
 
-// ASCII率が高い = 英語テキストと判定（0.85以上で英語扱い）
 function isLikelyEnglish(text: string): boolean {
   const ascii = [...text].filter(c => c.charCodeAt(0) < 128).length
   return ascii / text.length > 0.85
 }
 
-// ── MangaDex: 漫画あらすじ ────────────────────────────
-// data[].attributes.description は { ja: '...', en: '...' } のオブジェクト
-// 日本語優先、なければ英語を使う
-async function findMangaDescription(title: string): Promise<string | null> {
+// ── MangaDex: あらすじ + 表紙URL ──────────────────────
+// cover_art リレーションを includes[] で同時取得
+// 表紙URL: https://uploads.mangadex.org/covers/{mangaId}/{fileName}.512.jpg
+async function findMangaInfo(title: string): Promise<{ description: string | null; imageUrl: string | null }> {
   try {
     const params = new URLSearchParams({
       title,
       limit: '5',
       'order[relevance]': 'desc',
+      'includes[]': 'cover_art',
     })
-    const res  = await fetch(`https://api.mangadex.org/manga?${params}`, {
+    const res = await fetch(`https://api.mangadex.org/manga?${params}`, {
       headers: { 'User-Agent': 'sen-manga-app/1.0' },
     })
     if (!res.ok) throw new Error(`MangaDex ${res.status}`)
     const data = await res.json()
 
     for (const manga of (data.data ?? []) as any[]) {
+      // あらすじ: ja → en フォールバック
       const desc = manga.attributes?.description
-      // 日本語優先 → 英語フォールバック
       const text = desc?.ja ?? desc?.en ?? desc?.['ja-ro'] ?? null
-      if (text && text.length > 30) return text
-    }
-  } catch (e) {}
 
-  return null
+      // 表紙: cover_art リレーション
+      const coverRel = (manga.relationships ?? []).find((r: any) => r.type === 'cover_art')
+      const fileName = coverRel?.attributes?.fileName ?? null
+      const imageUrl = fileName
+        ? `https://uploads.mangadex.org/covers/${manga.id}/${fileName}.512.jpg`
+        : null
+
+      if (text && text.length > 30) return { description: text, imageUrl }
+    }
+  } catch (e) {
+    console.error('  MangaDex error:', e)
+  }
+  return { description: null, imageUrl: null }
 }
 
-// ── Jikan: アニメあらすじ ─────────────────────────────
-async function findAnimeDescription(title: string): Promise<string | null> {
-  const params = new URLSearchParams({ q: title, limit: '5' })
-  const res  = await fetch(`https://api.jikan.moe/v4/anime?${params}`)
-  const data = await res.json()
-  for (const item of (data.data ?? []) as any[]) {
-    const desc = item.synopsis
-    if (desc && desc.length > 30) return desc
+// ── Jikan: あらすじ + 表紙URL ─────────────────────────
+// images.jpg.large_image_url が最高解像度
+async function findAnimeInfo(title: string): Promise<{ description: string | null; imageUrl: string | null }> {
+  try {
+    const params = new URLSearchParams({ q: title, limit: '5' })
+    const res  = await fetch(`https://api.jikan.moe/v4/anime?${params}`)
+    const data = await res.json()
+    for (const item of (data.data ?? []) as any[]) {
+      const desc     = item.synopsis
+      const imageUrl = item.images?.jpg?.large_image_url ?? item.images?.jpg?.image_url ?? null
+      if (desc && desc.length > 30) return { description: desc, imageUrl }
+    }
+  } catch (e) {
+    console.error('  Jikan error:', e)
   }
-  return null
+  return { description: null, imageUrl: null }
 }
 
 async function wait(ms: number) { return new Promise(r => setTimeout(r, ms)) }
 
 async function run() {
-  // --force: 全件取得して英語テキストも対象にする
-  // 通常:   description が null のものだけ
   const { data: allPosts, error } = await supabase
     .from('posts')
-    .select('id, title, category, description')
+    .select('id, title, category, description, image_url')
     .order('created_at', { ascending: true })
 
   if (error) { console.error('fetch error:', error.message); process.exit(1) }
 
   const posts = (allPosts ?? []).filter(p => {
-    if (FORCE) {
-      // --force: null または英語っぽいものを対象に
-      return !p.description || isLikelyEnglish(p.description)
+    if (IMAGES_ONLY) {
+      // 画像がないものだけ対象
+      return !p.image_url
     }
-    return !p.description
+    if (FORCE) {
+      return !p.description || isLikelyEnglish(p.description) || !p.image_url
+    }
+    return !p.description || !p.image_url
   })
 
-  console.log(`🔍 対象投稿: ${posts.length} 件 ${FORCE ? '(--force: 英語テキスト含む)' : '(description が null)'}\n`)
+  const mode = IMAGES_ONLY ? '--images-only' : FORCE ? '--force' : '通常'
+  console.log(`🔍 対象投稿: ${posts.length} 件 (${mode})\n`)
 
   let updated = 0, failed = 0
 
   for (const post of posts) {
-    await wait(500)
+    await wait(600) // API レート制限対策
 
-    const desc = post.category === 'anime'
-      ? await findAnimeDescription(post.title)
-      : await findMangaDescription(post.title)
+    const info = post.category === 'anime'
+      ? await findAnimeInfo(post.title)
+      : await findMangaInfo(post.title)
 
-    if (desc) {
-      const { error: updateErr } = await supabase
-        .from('posts')
-        .update({ description: desc })
-        .eq('id', post.id)
+    // 更新するフィールドを決定
+    const updateData: Record<string, string> = {}
 
-      if (updateErr) {
-        console.error(`  ❌ ${post.title}: ${updateErr.message}`)
-        failed++
-      } else {
-        const lang = isLikelyEnglish(desc) ? '(en)' : '(ja)'
-        console.log(`  ✓ [${post.category}] ${post.title} ${lang}`)
-        updated++
-      }
-    } else {
+    if (!IMAGES_ONLY && info.description) {
+      updateData.description = info.description
+    }
+    if (info.imageUrl && (!post.image_url || FORCE)) {
+      updateData.image_url = info.imageUrl
+    }
+
+    if (Object.keys(updateData).length === 0) {
       console.log(`  – [${post.category}] ${post.title} → 見つからず`)
       failed++
+      continue
+    }
+
+    const { error: updateErr } = await supabase
+      .from('posts')
+      .update(updateData)
+      .eq('id', post.id)
+
+    if (updateErr) {
+      console.error(`  ❌ ${post.title}: ${updateErr.message}`)
+      failed++
+    } else {
+      const hasDesc  = updateData.description ? (isLikelyEnglish(updateData.description) ? '(en)' : '(ja)') : ''
+      const hasImg   = updateData.image_url ? '🖼' : ''
+      console.log(`  ✓ [${post.category}] ${post.title} ${hasDesc} ${hasImg}`)
+      updated++
     }
   }
 
