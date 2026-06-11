@@ -1,26 +1,122 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ─────────────────────────────────────────────
+   学習ポイント: Tailwind v4 の @theme
+   --color-xxx と定義するだけで bg-xxx / text-xxx / border-xxx が使える
+   v3 の tailwind.config.js は不要になった
+───────────────────────────────────────────── */
+@theme {
+  /* メインカラー */
+  --color-bg:       #0C0C0C;
+  --color-surface:  #161616;
+  --color-surface2: #1F1F1F;
+  --color-border:   #282828;
+  --color-border2:  #333333;
+  --color-text:     #F0F0F0;
+  --color-sub:      #777777;
+  --color-sub2:     #555555;
+  --color-accent:   #E8E8E8;
+
+  /* スワイプ方向カラー */
+  --color-save: #54d68a;
+  --color-skip: #f05050;
+  --color-god:  #e8c24a;
 }
 
+/* フォント: Plus Jakarta Sans (variable) → 日本語は system fallback */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-jakarta), 'Hiragino Kaku Gothic ProN', 'Yu Gothic',
+               'Noto Sans JP', system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── リセット & ベース ─── */
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: theme(--color-bg);
+  color: theme(--color-text);
+  overflow-x: hidden;
+  /* ネイティブアプリ感: ゴムのようなバウンスを無効化 */
+  overscroll-behavior: none;
+  /* テキスト選択をオフ → 長押しで青くならない */
+  -webkit-user-select: none;
+  user-select: none;
 }
+
+/* 入力欄だけ選択を許可 */
+input, textarea, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ─── 背景エフェクト ─── */
+/* 微妙なラジアルグラデーション — ネオンではなく白のほんのり光 */
+.mesh-bg {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 50% at 15% 5%, rgba(255,255,255,.03) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 40% at 85% 90%, rgba(255,255,255,.02) 0%, transparent 55%);
+}
+
+/* フィルムグレイン質感 — 安っぽくならずに高級感を出す小技 */
+.noise-overlay {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: .025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 128px;
+}
+
+/* ─── スクロールアニメーション ───
+   学習ポイント: opacity と translateY を組み合わせた定番フェードイン
+   JS の IntersectionObserver で .visible クラスを付与することで発火 */
+.fade-up {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity .65s cubic-bezier(.16,1,.3,1), transform .65s cubic-bezier(.16,1,.3,1);
+}
+.fade-up.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* カードのフェードインに staggered delay を付与 */
+.post-card {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity .55s cubic-bezier(.16,1,.3,1), transform .55s cubic-bezier(.16,1,.3,1),
+              border-color .2s, box-shadow .2s;
+}
+.post-card.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* スクロールバーを細く */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+
+/* ─── ヒーロー浮遊カードアニメーション (cosmos.so スタイル) ───
+   3種類のキーフレームで動きにバリエーションを出す。
+   外側 div で position+rotation、内側 div でこのアニメーション。
+   transform をネストして干渉させないのがポイント。 */
+@keyframes bg-float-a {
+  0%, 100% { transform: translateY(0px) }
+  50%      { transform: translateY(-22px) }
+}
+@keyframes bg-float-b {
+  0%, 100% { transform: translateY(0px) }
+  50%      { transform: translateY(18px) }
+}
+@keyframes bg-float-c {
+  0%, 100% { transform: translate(0px, 0px) }
+  33%      { transform: translate(6px, -16px) }
+  66%      { transform: translate(-4px, 10px) }
+}
+
+.bg-float-a { animation: bg-float-a var(--dur,10s) var(--delay,0s) ease-in-out infinite; }
+.bg-float-b { animation: bg-float-b var(--dur,10s) var(--delay,0s) ease-in-out infinite; }
+.bg-float-c { animation: bg-float-c var(--dur,10s) var(--delay,0s) ease-in-out infinite; }
