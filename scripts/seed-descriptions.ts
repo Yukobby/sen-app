@@ -27,41 +27,52 @@ function isLikelyEnglish(text: string): boolean {
   return ascii / text.length > 0.85
 }
 
-// ── MangaDex: あらすじ + 表紙URL ──────────────────────
-// cover_art リレーションを includes[] で同時取得
-// 表紙URL: https://uploads.mangadex.org/covers/{mangaId}/{fileName}.512.jpg
-async function findMangaInfo(title: string): Promise<{ description: string | null; imageUrl: string | null }> {
+// ── MangaDex: あらすじ (日本語優先) ──────────────────
+// 表紙はMangaDexの品質が不安定なのでJikanを使う
+async function findMangaDescription(title: string): Promise<string | null> {
   try {
     const params = new URLSearchParams({
       title,
       limit: '5',
       'order[relevance]': 'desc',
-      'includes[]': 'cover_art',
     })
     const res = await fetch(`https://api.mangadex.org/manga?${params}`, {
       headers: { 'User-Agent': 'sen-manga-app/1.0' },
     })
-    if (!res.ok) throw new Error(`MangaDex ${res.status}`)
+    if (!res.ok) return null
     const data = await res.json()
-
     for (const manga of (data.data ?? []) as any[]) {
-      // あらすじ: ja → en フォールバック
       const desc = manga.attributes?.description
       const text = desc?.ja ?? desc?.en ?? desc?.['ja-ro'] ?? null
-
-      // 表紙: cover_art リレーション
-      const coverRel = (manga.relationships ?? []).find((r: any) => r.type === 'cover_art')
-      const fileName = coverRel?.attributes?.fileName ?? null
-      const imageUrl = fileName
-        ? `https://uploads.mangadex.org/covers/${manga.id}/${fileName}.512.jpg`
-        : null
-
-      if (text && text.length > 30) return { description: text, imageUrl }
+      if (text && text.length > 30) return text
     }
-  } catch (e) {
-    console.error('  MangaDex error:', e)
-  }
-  return { description: null, imageUrl: null }
+  } catch {}
+  return null
+}
+
+// ── Jikan (MyAnimeList): 漫画 表紙URL ─────────────────
+// MALの画像は高品質で安定している
+async function findMangaImageUrl(title: string): Promise<string | null> {
+  try {
+    const params = new URLSearchParams({ q: title, limit: '3' })
+    const res  = await fetch(`https://api.jikan.moe/v4/manga?${params}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    for (const item of (data.data ?? []) as any[]) {
+      const url = item.images?.jpg?.large_image_url ?? item.images?.jpg?.image_url ?? null
+      if (url && !url.includes('questionmark')) return url
+    }
+  } catch {}
+  return null
+}
+
+// ── manga: あらすじ(MangaDex) + 表紙(Jikan) ──────────
+async function findMangaInfo(title: string): Promise<{ description: string | null; imageUrl: string | null }> {
+  const [description, imageUrl] = await Promise.all([
+    findMangaDescription(title),
+    findMangaImageUrl(title),
+  ])
+  return { description, imageUrl }
 }
 
 // ── Jikan: あらすじ + 表紙URL ─────────────────────────
