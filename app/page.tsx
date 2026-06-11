@@ -445,7 +445,7 @@ function FeedSection({ currentUserId }: { currentUserId?: string }) {
 
   useEffect(() => {
     setLoading(true)
-    let q = supabase.from('posts').select('*').order('created_at', { ascending: false })
+    let q = supabase.from('posts').select('*').order('created_at', { ascending: false }).limit(15)
     if (filter !== 'all') q = q.eq('category', filter)
     q.then(async ({ data }) => {
       const fetched = data || []
@@ -517,10 +517,9 @@ function FeedSection({ currentUserId }: { currentUserId?: string }) {
   return (
     <section className="pb-10" ref={sectionRef}>
       <div className="max-w-[1160px] mx-auto px-6 md:px-12">
-        {/* コントロールバー: タイトル + フィルター + 表示切り替え */}
+        {/* コントロールバー */}
         <div className="fade-up flex items-center gap-2 mb-4 flex-wrap">
           <h2 className="font-black text-base tracking-tight mr-2">みんなの投稿</h2>
-          {/* カテゴリフィルター */}
           {filters.map(({ key, label }) => (
             <button
               key={key}
@@ -534,23 +533,18 @@ function FeedSection({ currentUserId }: { currentUserId?: string }) {
               {label}
             </button>
           ))}
-
-          {/* 表示切り替えトグル */}
-          <div className="ml-auto flex items-center gap-1 bg-surface2 border border-border rounded-lg p-1">
-            <button
-              onClick={() => setViewMode('card')}
-              className={`p-1.5 rounded transition ${viewMode === 'card' ? 'bg-surface border border-border2' : 'hover:bg-surface'}`}
-              title="グリッド表示"
-            >
-              <GridIcon active={viewMode === 'card'} />
-            </button>
-            <button
-              onClick={() => setViewMode('feed')}
-              className={`p-1.5 rounded transition ${viewMode === 'feed' ? 'bg-surface border border-border2' : 'hover:bg-surface'}`}
-              title="タイムライン表示"
-            >
-              <ListIcon active={viewMode === 'feed'} />
-            </button>
+          <div className="ml-auto flex items-center gap-2">
+            <Link href="/feed" className="text-[12px] font-semibold text-sub hover:text-text transition">
+              全部見る →
+            </Link>
+            <div className="flex items-center gap-1 bg-surface2 border border-border rounded-lg p-1">
+              <button onClick={() => setViewMode('card')} className={`p-1.5 rounded transition ${viewMode === 'card' ? 'bg-surface border border-border2' : 'hover:bg-surface'}`} title="グリッド">
+                <GridIcon active={viewMode === 'card'} />
+              </button>
+              <button onClick={() => setViewMode('feed')} className={`p-1.5 rounded transition ${viewMode === 'feed' ? 'bg-surface border border-border2' : 'hover:bg-surface'}`} title="リスト">
+                <ListIcon active={viewMode === 'feed'} />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -602,6 +596,21 @@ function FeedSection({ currentUserId }: { currentUserId?: string }) {
                 onLike={() => handleLike(post.id)}
               />
             ))}
+          </div>
+        )}
+
+        {/* 全部見るボタン */}
+        {!loading && posts.length > 0 && (
+          <div className="mt-6 text-center">
+            <Link
+              href={`/feed${filter !== 'all' ? `?filter=${filter}` : ''}`}
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl border border-border2 text-sm font-semibold text-sub hover:text-text hover:border-sub transition"
+            >
+              投稿をもっと見る
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="w-4 h-4">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </Link>
           </div>
         )}
       </div>
@@ -1137,6 +1146,7 @@ export default function Home() {
         <div className="hidden md:flex items-center gap-7">
           <Link href="/"           className="text-[13px] font-medium text-sub hover:text-text transition">ホーム</Link>
           <Link href="/swipe"      className="text-[13px] font-medium text-sub hover:text-text transition">発見する</Link>
+          <Link href="/feed"       className="text-[13px] font-medium text-sub hover:text-text transition">投稿一覧</Link>
           {currentUser && (
             <Link href="/collection" className="text-[13px] font-medium text-sub hover:text-text transition">コレクション</Link>
           )}
