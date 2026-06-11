@@ -48,7 +48,6 @@ function FeedPageContent() {
   const [hasMore,       setHasMore]      = useState(true)
   const [currentUserId, setCurrentUserId] = useState<string | undefined>()
   const offsetRef = useRef(0)  // offset を ref で管理して race condition を防ぐ
-  const gridRef   = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id))
@@ -71,22 +70,6 @@ function FeedPageContent() {
     return () => { cancelled = true }
   }, [filter, currentUserId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── post-card を IntersectionObserver で可視化 ──────────
-  useEffect(() => {
-    if (loading || !gridRef.current) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach(entry => {
-          if (!entry.isIntersecting) return
-          ;(entry.target as HTMLElement).classList.add('visible')
-          observer.unobserve(entry.target)
-        })
-      },
-      { threshold: 0.05 }
-    )
-    gridRef.current.querySelectorAll('.post-card').forEach(el => observer.observe(el))
-    return () => observer.disconnect()
-  }, [loading, posts.length])
 
   // ── ページ単位フェッチ（filter クロージャに依存しない純関数） ──
   async function fetchPage(from: number, reset: boolean, _cancelled: boolean) {
@@ -236,11 +219,10 @@ function FeedPageContent() {
         ) : (
           <>
             <div
-              ref={gridRef}
-              className={viewMode === 'card'
+              className={`feed-no-anim ${viewMode === 'card'
                 ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3'
                 : 'flex flex-col gap-2 max-w-2xl'
-              }
+              }`}
             >
               {posts.map((post) => (
                 <PostCard

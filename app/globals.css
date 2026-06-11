@@ -94,6 +94,12 @@ input, textarea, [contenteditable] {
   transform: translateY(0);
 }
 
+/* /feed ページ: フェードアニメーション不要（全件一覧なので即表示） */
+.feed-no-anim .post-card {
+  opacity: 1;
+  transform: none;
+}
+
 /* スクロールバーを細く */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
