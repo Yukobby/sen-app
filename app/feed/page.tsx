@@ -34,45 +34,62 @@ function ListIcon({ active }: { active: boolean }) {
 }
 
 function FeedPageContent() {
-  const searchParams = useSearchParams()
-  const initFilter   = (searchParams.get('filter') as FilterType) ?? 'all'
+  const searchParams   = useSearchParams()
+  const initFilter     = (searchParams.get('filter') as FilterType) ?? 'all'
 
-  const [posts,        setPosts]       = useState<Post[]>([])
-  const [profilesMap,  setProfilesMap] = useState<Record<string, string>>({})
-  const [likeCountMap, setLikeCountMap] = useState<Record<string, number>>({})
-  const [likedByMe,    setLikedByMe]    = useState<Set<string>>(new Set())
-  const [filter,       setFilter]      = useState<FilterType>(initFilter)
-  const [viewMode,     setViewMode]    = useState<ViewMode>('card')
-  const [loading,      setLoading]     = useState(true)
-  const [loadingMore,  setLoadingMore] = useState(false)
-  const [hasMore,      setHasMore]     = useState(true)
-  const [offset,       setOffset]      = useState(0)
+  const [posts,         setPosts]        = useState<Post[]>([])
+  const [profilesMap,   setProfilesMap]  = useState<Record<string, string>>({})
+  const [likeCountMap,  setLikeCountMap] = useState<Record<string, number>>({})
+  const [likedByMe,     setLikedByMe]    = useState<Set<string>>(new Set())
+  const [filter,        setFilter]       = useState<FilterType>(initFilter)
+  const [viewMode,      setViewMode]     = useState<ViewMode>('card')
+  const [loading,       setLoading]      = useState(true)
+  const [loadingMore,   setLoadingMore]  = useState(false)
+  const [hasMore,       setHasMore]      = useState(true)
   const [currentUserId, setCurrentUserId] = useState<string | undefined>()
-  const gridRef = useRef<HTMLDivElement>(null)
+  const offsetRef = useRef(0)  // offset を ref で管理して race condition を防ぐ
+  const gridRef   = useRef<HTMLDivElement>(null)
 
-  // ログイン状態
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id))
   }, [])
 
-  // フィルター変更時はリセット
+  // ── フィルター変更 → リセット＆再取得 ──────────────────
+  // 2つの useEffect に分けると race condition が起きるので 1つにまとめる
   useEffect(() => {
+    let cancelled = false
+    offsetRef.current = 0
     setPosts([])
-    setOffset(0)
     setHasMore(true)
     setLoading(true)
-  }, [filter])
 
-  // データ取得
+    fetchPage(0, true, cancelled).then(result => {
+      if (cancelled) return
+      applyResult(result, true)
+    })
+
+    return () => { cancelled = true }
+  }, [filter, currentUserId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── post-card を IntersectionObserver で可視化 ──────────
   useEffect(() => {
-    if (!loading && offset !== 0) return // loadMore で呼ぶ
-    fetchPosts(0, true)
-  }, [filter]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (loading || !gridRef.current) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return
+          ;(entry.target as HTMLElement).classList.add('visible')
+          observer.unobserve(entry.target)
+        })
+      },
+      { threshold: 0.05 }
+    )
+    gridRef.current.querySelectorAll('.post-card').forEach(el => observer.observe(el))
+    return () => observer.disconnect()
+  }, [loading, posts.length])
 
-  async function fetchPosts(from: number, reset: boolean) {
-    if (reset) setLoading(true)
-    else setLoadingMore(true)
-
+  // ── ページ単位フェッチ（filter クロージャに依存しない純関数） ──
+  async function fetchPage(from: number, reset: boolean, _cancelled: boolean) {
     let q = supabase
       .from('posts')
       .select('*')
@@ -83,9 +100,9 @@ function FeedPageContent() {
     const { data } = await q
     const fetched  = data ?? []
 
-    // プロフィール + いいね
     const postIds = fetched.map(p => p.id)
     const userIds = [...new Set(fetched.map(p => p.user_id))]
+
     const [profilesRes, likesRes] = await Promise.all([
       userIds.length > 0
         ? supabase.from('profiles').select('id, username').in('id', userIds)
@@ -95,32 +112,46 @@ function FeedPageContent() {
         : Promise.resolve({ data: [] }),
     ])
 
-    setProfilesMap(prev => ({
-      ...prev,
-      ...Object.fromEntries((profilesRes.data || []).map((p: any) => [p.id, p.username || ''])),
-    }))
-
-    const countMap: Record<string, number> = {}
+    const profiles: Record<string, string> = Object.fromEntries(
+      (profilesRes.data || []).map((p: any) => [p.id, p.username || ''])
+    )
+    const counts: Record<string, number> = {}
     const myLikes = new Set<string>()
     for (const like of (likesRes.data || []) as any[]) {
-      countMap[like.post_id] = (countMap[like.post_id] || 0) + 1
+      counts[like.post_id] = (counts[like.post_id] || 0) + 1
       if (currentUserId && like.user_id === currentUserId) myLikes.add(like.post_id)
     }
-    setLikeCountMap(prev => ({ ...prev, ...countMap }))
-    setLikedByMe(prev => { const s = new Set(prev); myLikes.forEach(id => s.add(id)); return s })
 
-    if (reset) setPosts(fetched)
-    else setPosts(prev => [...prev, ...fetched])
+    return { fetched, profiles, counts, myLikes, more: fetched.length === PAGE_SIZE, nextOffset: from + fetched.length }
+  }
 
-    setHasMore(fetched.length === PAGE_SIZE)
-    setOffset(from + fetched.length)
+  function applyResult(
+    result: Awaited<ReturnType<typeof fetchPage>>,
+    reset: boolean
+  ) {
+    const { fetched, profiles, counts, myLikes, more, nextOffset } = result
+    if (reset) {
+      setPosts(fetched)
+      setProfilesMap(profiles)
+      setLikeCountMap(counts)
+      setLikedByMe(myLikes)
+    } else {
+      setPosts(prev => [...prev, ...fetched])
+      setProfilesMap(prev => ({ ...prev, ...profiles }))
+      setLikeCountMap(prev => ({ ...prev, ...counts }))
+      setLikedByMe(prev => { const s = new Set(prev); myLikes.forEach(id => s.add(id)); return s })
+    }
+    offsetRef.current = nextOffset
+    setHasMore(more)
     setLoading(false)
     setLoadingMore(false)
   }
 
-  function loadMore() {
+  async function loadMore() {
     if (loadingMore || !hasMore) return
-    fetchPosts(offset, false)
+    setLoadingMore(true)
+    const result = await fetchPage(offsetRef.current, false, false)
+    applyResult(result, false)
   }
 
   const handleLike = async (postId: string) => {
@@ -142,7 +173,7 @@ function FeedPageContent() {
     <div className="min-h-screen bg-bg text-text">
       {/* ヘッダー */}
       <header className="sticky top-0 z-40 border-b border-border bg-bg/80 backdrop-blur-xl">
-        <div className="max-w-[1160px] mx-auto px-6 md:px-12 py-4 flex items-center gap-4 flex-wrap">
+        <div className="max-w-[1160px] mx-auto px-6 md:px-12 py-4 flex items-center gap-3 flex-wrap">
           <Link href="/" className="text-sub hover:text-text transition text-sm font-medium flex items-center gap-1 flex-shrink-0">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} className="w-4 h-4">
               <polyline points="15 18 9 12 15 6"/>
@@ -150,9 +181,8 @@ function FeedPageContent() {
             ホーム
           </Link>
 
-          <h1 className="font-black text-sm tracking-tight">みんなの投稿</h1>
+          <h1 className="font-black text-sm tracking-tight flex-shrink-0">みんなの投稿</h1>
 
-          {/* フィルター */}
           <div className="flex items-center gap-1.5">
             {filters.map(({ key, label }) => (
               <button
@@ -173,7 +203,6 @@ function FeedPageContent() {
             {!loading && (
               <span className="text-xs text-sub2">{posts.length}{hasMore ? '+' : ''}件</span>
             )}
-            {/* 表示切り替え */}
             <div className="flex items-center gap-1 bg-surface2 border border-border rounded-lg p-1">
               <button onClick={() => setViewMode('card')} className={`p-1.5 rounded transition ${viewMode === 'card' ? 'bg-surface border border-border2' : 'hover:bg-surface'}`}>
                 <GridIcon active={viewMode === 'card'} />
@@ -224,13 +253,11 @@ function FeedPageContent() {
                   onLike={() => handleLike(post.id)}
                 />
               ))}
-              {/* ロード中スケルトン */}
               {loadingMore && Array.from({ length: 3 }).map((_, i) => (
                 <div key={`sk-${i}`} className={`bg-surface border border-border rounded-2xl animate-pulse ${viewMode === 'card' ? 'h-72' : 'h-28'}`} />
               ))}
             </div>
 
-            {/* もっと読むボタン */}
             {hasMore && !loadingMore && (
               <div className="mt-10 text-center">
                 <button
@@ -242,7 +269,7 @@ function FeedPageContent() {
               </div>
             )}
             {!hasMore && posts.length > 0 && (
-              <p className="mt-10 text-center text-xs text-sub2">全 {posts.length} 件表示しました</p>
+              <p className="mt-10 text-center text-xs text-sub2">全 {posts.length} 件</p>
             )}
           </>
         )}
