@@ -22,6 +22,9 @@ import { getAffLinks } from '@/lib/affiliate'
 
 type Dir = 'left' | 'right' | 'up'
 
+// カードが元に戻るときのスプリング設定
+const SPRING_BACK = { type: 'spring' as const, stiffness: 400, damping: 30, mass: 0.8 }
+
 // ── アイコン ──────────────────────────────────────
 function BookPlaceholder() {
   return (
@@ -112,16 +115,18 @@ const SwipeCard = forwardRef<
   const handleDragEnd = (_: PointerEvent, info: PanInfo) => {
     const { x: ox, y: oy } = info.offset
     const { x: vx, y: vy } = info.velocity
-    // フリップ中はスワイプ判定しない (裏面は読み専用)
-    if (isFlipped) { dragMoved.current = false; return }
-    // 距離 75px OR 速度 500px/s 以上でスワイプ成立 (Quizletライクな感度)
-    const fastUp    = vy < -500 && oy < -40
-    const fastRight = vx >  500 && ox >  40
-    const fastLeft  = vx < -500 && ox < -40
-    if ((oy < -75 && Math.abs(oy) > Math.abs(ox)) || fastUp)  { flyOut('up');    return }
-    if (ox > 75  || fastRight) { flyOut('right'); return }
-    if (ox < -75 || fastLeft)  { flyOut('left');  return }
     dragMoved.current = false
+    // フリップ中はスワイプ判定しない
+    if (isFlipped) { controls.start({ x: 0, y: 0, transition: SPRING_BACK }); return }
+    // 距離 70px OR 速度 400px/s 以上でスワイプ成立
+    const fastUp    = vy < -400 && oy < -30
+    const fastRight = vx >  400 && ox >  30
+    const fastLeft  = vx < -400 && ox < -30
+    if ((oy < -70 && Math.abs(oy) > Math.abs(ox)) || fastUp)  { flyOut('up');    return }
+    if (ox > 70  || fastRight) { flyOut('right'); return }
+    if (ox < -70 || fastLeft)  { flyOut('left');  return }
+    // スワイプ不成立 → なめらかに元の位置へ戻す
+    controls.start({ x: 0, y: 0, transition: SPRING_BACK })
   }
 
   // タップ = ドラッグしていないポインターアップ → フリップ
@@ -138,11 +143,12 @@ const SwipeCard = forwardRef<
   return (
     <motion.div
       animate={controls}
-      style={{ x, y, rotate, perspective: '1200px', cursor: isFlipped ? 'pointer' : 'grab', touchAction: 'none' } as any}
+      style={{ x, y, rotate, perspective: '1200px', cursor: isFlipped ? 'pointer' : 'grab', touchAction: 'none', willChange: 'transform' } as any}
       drag={!isFlipped}
       dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
-      dragElastic={0.9}
+      dragElastic={0.6}
       dragMomentum={false}
+      dragTransition={{ bounceStiffness: 400, bounceDamping: 30 }}
       onDragStart={handleDragStart}
       onDrag={handleDrag}
       onDragEnd={handleDragEnd as any}

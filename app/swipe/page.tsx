@@ -38,7 +38,7 @@ function SwipePageContent() {
   const currentDeck = DECKS.find(d => d.key === deck) ?? DECKS[0]
 
   return (
-    <div className="min-h-screen bg-bg text-text flex flex-col">
+    <div className="h-[100svh] bg-bg text-text flex flex-col overflow-hidden">
       <TutorialModal />
       {/* ヘッダー */}
       <header className="border-b border-border px-6 py-4 bg-bg/75 backdrop-blur-xl sticky top-0 z-10">
@@ -75,7 +75,7 @@ function SwipePageContent() {
       </header>
 
       {/* メインエリア */}
-      <main className="flex-1 flex flex-col items-center justify-center px-6 py-12">
+      <main className="flex-1 flex flex-col items-center justify-center px-6 py-4 overflow-hidden">
         {loading ? (
           <div className="flex flex-col items-center gap-4">
             <div className="w-[300px] h-[400px] bg-surface border border-border rounded-2xl animate-pulse" />
