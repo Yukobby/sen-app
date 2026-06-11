@@ -42,7 +42,7 @@ const FLOAT_CONFIGS = [
 function Hero({ bgPosts }: { bgPosts?: Post[] }) {
   return (
     <section
-      className="relative min-h-[100svh] flex flex-col items-center justify-center px-6 py-32 text-center overflow-hidden"
+      className="relative min-h-[80svh] md:min-h-[100svh] flex flex-col items-center justify-center px-6 py-16 md:py-32 text-center overflow-hidden"
       style={{ background: '#000' }}
     >
       {/* ── 背景レイヤー1: 深みのあるグロー ── */}
@@ -133,6 +133,7 @@ function Hero({ bgPosts }: { bgPosts?: Post[] }) {
                       src={post.image_url}
                       alt=""
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
                     />
                   )}
                 </div>
@@ -287,7 +288,7 @@ function StatsBar({ stats }: { stats: StatsData }) {
   ]
   return (
     <div className="border-y border-border">
-      <div className="max-w-[1160px] mx-auto px-6 md:px-12 py-10 grid grid-cols-3 gap-4 text-center">
+      <div className="max-w-[1160px] mx-auto px-6 md:px-12 py-6 md:py-10 grid grid-cols-3 gap-4 text-center">
         {items.map(({ value, label, suffix }) => (
           <div key={label}>
             <p className="font-black leading-none mb-1"
@@ -593,7 +594,7 @@ function DiscoverSection({ posts, stats }: { posts: Post[]; stats: StatsData }) 
   ] as const
 
   return (
-    <section className="py-20 border-b border-border" id="discover">
+    <section className="py-10 md:py-20 border-b border-border" id="discover">
       <div className="max-w-[1160px] mx-auto px-6 md:px-12">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
 

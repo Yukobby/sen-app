@@ -18,7 +18,7 @@ import {
 } from 'framer-motion'
 import { Post, supabase } from '@/lib/supabase'
 import CategoryBadge from './CategoryBadge'
-import AffiliateCTA from './AffiliateCTA'
+import { getAffLinks } from '@/lib/affiliate'
 
 type Dir = 'left' | 'right' | 'up'
 
@@ -111,11 +111,16 @@ const SwipeCard = forwardRef<
 
   const handleDragEnd = (_: PointerEvent, info: PanInfo) => {
     const { x: ox, y: oy } = info.offset
+    const { x: vx, y: vy } = info.velocity
     // フリップ中はスワイプ判定しない (裏面は読み専用)
     if (isFlipped) { dragMoved.current = false; return }
-    if (oy < -100 && Math.abs(oy) > Math.abs(ox)) { flyOut('up'); return }
-    if (ox > 100)  { flyOut('right'); return }
-    if (ox < -100) { flyOut('left');  return }
+    // 距離 75px OR 速度 500px/s 以上でスワイプ成立 (Quizletライクな感度)
+    const fastUp    = vy < -500 && oy < -40
+    const fastRight = vx >  500 && ox >  40
+    const fastLeft  = vx < -500 && ox < -40
+    if ((oy < -75 && Math.abs(oy) > Math.abs(ox)) || fastUp)  { flyOut('up');    return }
+    if (ox > 75  || fastRight) { flyOut('right'); return }
+    if (ox < -75 || fastLeft)  { flyOut('left');  return }
     dragMoved.current = false
   }
 
@@ -280,8 +285,6 @@ export default function SwipeDeck({ posts, userId, deckLabel }: DeckProps) {
   const [saved,   setSaved]   = useState<Post[]>([])
   const [godTier, setGodTier] = useState<Post[]>([])
   const [skipped, setSkipped] = useState(0)
-  const [ctaPost, setCtaPost] = useState<Post | null>(null)
-  const [ctaDir,  setCtaDir]  = useState<'right' | 'up' | null>(null)
   const [lastPost, setLastPost] = useState<Post | null>(null)
   const [lastDir,  setLastDir]  = useState<Dir | null>(null)
   const cardRef = useRef<{ flyOut: (dir: Dir) => void }>(null)
@@ -306,7 +309,6 @@ export default function SwipeDeck({ posts, userId, deckLabel }: DeckProps) {
     setGodTier([])
     setSkipped(0)
     setLastPost(null)
-    setCtaPost(null)
   }, [posts])
 
   const current    = queue[index]
@@ -332,10 +334,8 @@ export default function SwipeDeck({ posts, userId, deckLabel }: DeckProps) {
     markSeen(post.id)   // localStorage に保存 → 次回ロード時にスキップ
     if (dir === 'right') {
       setSaved(prev => [...prev, post]); saveToDb(post, 'save')
-      setCtaPost(post); setCtaDir('right')
     } else if (dir === 'up') {
       setGodTier(prev => [...prev, post]); saveToDb(post, 'god')
-      setCtaPost(post); setCtaDir('up')
     } else {
       setSkipped(s => s + 1)
     }
@@ -358,7 +358,7 @@ export default function SwipeDeck({ posts, userId, deckLabel }: DeckProps) {
     if (lastDir === 'right') { setSaved(prev => prev.filter(p => p.id !== lastPost.id)); removeFromDb(lastPost) }
     if (lastDir === 'up')    { setGodTier(prev => prev.filter(p => p.id !== lastPost.id)); removeFromDb(lastPost) }
     if (lastDir === 'left')  setSkipped(s => Math.max(0, s - 1))
-    setIndex(i => i - 1); setLastPost(null); setCtaPost(null)
+    setIndex(i => i - 1); setLastPost(null)
   }, [lastPost, lastDir, index, removeFromDb])
 
   // ── 次の2〜3枚を事前プリロード ────────────────────
@@ -434,21 +434,47 @@ export default function SwipeDeck({ posts, userId, deckLabel }: DeckProps) {
           <p>スキップ: <span className="text-sub font-bold">{skipped}</span> 件</p>
         </div>
         {(saved.length > 0 || godTier.length > 0) && (
-          <div className="w-full text-left space-y-1.5">
-            {godTier.map(p => (
-              <div key={p.id} className="flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2 text-sm">
-                <span className="text-god">★</span>
-                <span className="font-semibold">{p.title}</span>
-                <CategoryBadge category={p.category} size="sm" />
-              </div>
-            ))}
-            {saved.map(p => (
-              <div key={p.id} className="flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2 text-sm">
-                <span className="text-save">♥</span>
-                <span className="font-semibold">{p.title}</span>
-                <CategoryBadge category={p.category} size="sm" />
-              </div>
-            ))}
+          <div className="w-full text-left space-y-2">
+            {godTier.map(p => {
+              const links = getAffLinks(p.title, p.category)
+              return (
+                <div key={p.id} className="bg-surface border border-border rounded-xl px-3 py-2.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-god text-sm">★</span>
+                    <span className="font-semibold text-sm flex-1 truncate">{p.title}</span>
+                    <CategoryBadge category={p.category} size="sm" />
+                  </div>
+                  <div className="flex gap-1.5">
+                    {links.map(l => (
+                      <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer"
+                         className={`flex-1 text-center text-[11px] font-bold py-1.5 rounded-lg transition ${l.primary ? 'bg-god/20 text-god border border-god/30 hover:bg-god/30' : 'bg-surface2 text-sub border border-border2 hover:text-text'}`}>
+                        {l.label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+            {saved.map(p => {
+              const links = getAffLinks(p.title, p.category)
+              return (
+                <div key={p.id} className="bg-surface border border-border rounded-xl px-3 py-2.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-save text-sm">♥</span>
+                    <span className="font-semibold text-sm flex-1 truncate">{p.title}</span>
+                    <CategoryBadge category={p.category} size="sm" />
+                  </div>
+                  <div className="flex gap-1.5">
+                    {links.map(l => (
+                      <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer"
+                         className={`flex-1 text-center text-[11px] font-bold py-1.5 rounded-lg transition ${l.primary ? 'bg-save/20 text-save border border-save/30 hover:bg-save/30' : 'bg-surface2 text-sub border border-border2 hover:text-text'}`}>
+                        {l.label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
         {!userId && (saved.length > 0 || godTier.length > 0) && (
@@ -633,12 +659,6 @@ export default function SwipeDeck({ posts, userId, deckLabel }: DeckProps) {
         </div>
       </div>
 
-      {/* SAVE後アフィリエイトCTA */}
-      <AffiliateCTA
-        post={ctaPost}
-        dir={ctaDir}
-        onClose={() => { setCtaPost(null); setCtaDir(null) }}
-      />
     </>
   )
 }
